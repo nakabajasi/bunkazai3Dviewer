@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="icon" href="data:,">
+  <title>Original 3D Viewer</title>
+
+  <style>
+    :root{
+      --bg:#1e1e1e; --fg:#eee; --muted:#bbb;
+      --panel:#111; --panel2:#151515; --line:#2a2a2a;
+      --btn:#222; --btnLine:#444;
+      --sideW: 380px;
+    }
+    html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui;background:var(--bg);color:var(--fg)}
+    #app{position:fixed;inset:0;right:var(--sideW);}
+
+    #sidebar{
+      position:fixed; top:0; right:0; bottom:0;
+      width:var(--sideW);
+      background:linear-gradient(180deg,var(--panel),var(--panel2));
+      border-left:1px solid var(--line);
+      display:flex; flex-direction:column;
+      z-index:20;
+    }
+    #sideHeader{
+      padding:12px 12px 8px;
+      border-bottom:1px solid var(--line);
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+    }
+    #sideHeader .title{font-size:13px; font-weight:700; letter-spacing:.2px;}
+    #status{
+      font-size:12px; color:var(--muted);
+      max-width: 70%;
+      text-align:right;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+
+    
+    #sideHeader .headRight{
+      display:flex; align-items:center; justify-content:flex-end; gap:8px;
+      min-width: 0;
+    }
+    #sideHeader .iconBtn{
+      padding:6px 8px;
+      border-radius:10px;
+      font-size:13px;
+      line-height:1;
+      min-width: 34px;
+    }
+
+    #fsOverlay{
+      position:fixed;
+      top:10px; right:10px;
+      z-index:50;
+      display:none;
+    }
+    #fsOverlay .iconBtn{
+      background: rgba(0,0,0,.35);
+      border:1px solid rgba(255,255,255,.25);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+/* ★復元：#sideBody を flex にしない（iOS/WebViewでのスクロール崩れ回避） */
+    #sideBody{
+      padding:10px 12px;
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* gap の代替（最小変更） */
+    #sideBody .section{ margin: 0 0 10px 0; }
+    #sideBody .section:last-child{ margin-bottom: 0; }
+
+    .section{
+      border:1px solid var(--line);
+      border-radius:12px;
+      overflow:hidden;
+      background:rgba(0,0,0,.12);
+    }
+    .section > .secHead{
+      padding:10px 10px;
+      background:rgba(255,255,255,.03);
+      border-bottom:1px solid var(--line);
+      display:flex; align-items:center; justify-content:space-between;
+      font-size:12px; font-weight:700;
+    }
+    .section > .secBody{padding:10px 10px; display:flex; flex-direction:column; gap:10px;}
+
+    .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+    button{
+      background:var(--btn); border:1px solid var(--btnLine); color:var(--fg);
+      border-radius:12px; padding:8px 10px; cursor:pointer;
+      font-size:12px;
+    }
+    button:hover{border-color:#666}
+    button:disabled{opacity:.5; cursor:not-allowed}
+
+    .hint{font-size:11px; color:var(--muted); line-height:1.4}
+    .fileList{
+      font-size:11px; color:var(--muted);
+      max-height: 120px; overflow:auto;
+      border:1px dashed var(--line); border-radius:10px;
+      padding:8px;
+      background:rgba(0,0,0,.12);
+      white-space:pre-wrap;
+    }
+
+    .field{
+      display:grid;
+      grid-template-columns: 120px 1fr;
+      gap:8px;
+      align-items:center;
+    }
+    .field label{font-size:11px; color:var(--muted)}
+    select{
+      width:100%;
+      background:#0f0f0f;
+      border:1px solid var(--line);
+      color:var(--fg);
+      padding:8px 10px;
+      border-radius:10px;
+      font-size:12px;
+      outline:none;
+    }
+    input[type="checkbox"]{ transform: translateY(1px); }
+
+    .pill{
+      display:inline-flex; gap:6px; align-items:center;
+      padding:6px 8px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:rgba(0,0,0,.12);
+      font-size:11px; color:var(--muted);
+    }
+
+    .axisRow{
+      display:grid;
+      grid-template-columns: 24px 1fr 24px;
+      align-items:center;
+      gap:6px;
+      width: 170px;
+    }
+    .axisRow .mid{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      height:30px;
+      border-radius:10px;
+      border:1px solid var(--line);
+      background:rgba(0,0,0,.12);
+      font-weight:700;
+      font-size:12px;
+      letter-spacing:.4px;
+    }
+    .axisBtn{
+      width:24px; height:30px;
+      display:flex; align-items:center; justify-content:center;
+      border-radius:10px;
+      padding:0;
+      font-size:14px;
+      line-height:1;
+    }
+    .axisGroup{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+
+    #fileInput{position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0}
+    #matcapInput{position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0}
+
+    #dropHint{
+      position:fixed; left:0; top:0; bottom:0; right:var(--sideW);
+      display:none; place-items:center;
+      z-index:19;
+      background:rgba(0,0,0,.35); color:#fff;
+      font-size:18px; font-weight:700;
+      border:2px dashed rgba(255,255,255,.25);
+      box-sizing:border-box;
+      text-align:center;
+      line-height:1.4;
+    }
+
+    /* Fullscreen: hide ALL UI (sidebar, overlays, hints)
+       + remove the reserved sidebar gutter (gray frame on the right). */
+    body.isFullscreen{ --sideW: 0px; }
+    body.isFullscreen #app{ right: 0 !important; }
+    body.isFullscreen #sidebar{ display:none !important; }
+    body.isFullscreen #fsOverlay{ display:none !important; }
+    body.isFullscreen #dropHint{ display:none !important; }
+
+
+    /* ---------------------------------------------
+       Section color coding (by responsibility module)
+       Trendy low-saturation, pale accents per section.
+       (Import / General / Camera / Lighting / Environment / PostProcess)
+       --------------------------------------------- */
+    :root{
+      --secImport: #8bb8b0;       /* dusty teal */
+      --secGeneral: #a7a1c5;      /* muted lavender */
+      --secCamera: #c2b090;       /* warm sand */
+      --secLighting: #9db38f;     /* soft sage */
+      --secEnvironment: #93a9c8;  /* misty blue */
+      --secPost: #c89aa2;         /* muted rose */
+    }
+
+    /* helper: apply per-section accent using scoped CSS */
+    #sideBody .section:nth-of-type(1){ --secAccent: var(--secImport); }
+    #sideBody .section:nth-of-type(2){ --secAccent: var(--secGeneral); }
+    #sideBody .section:nth-of-type(3){ --secAccent: var(--secCamera); }
+    #sideBody .section:nth-of-type(4){ --secAccent: var(--secLighting); }
+    #sideBody .section:nth-of-type(5){ --secAccent: var(--secEnvironment); }
+    #sideBody .section:nth-of-type(6){ --secAccent: var(--secPost); }
+
+    #sideBody .section{
+      /* subtle tint */
+      border-color: rgba(255,255,255,.08);
+      background: rgba(0,0,0,.12);
+    }
+    #sideBody .section[style], #sideBody .section[id] { /* keep specificity neutral; no-op */ }
+
+    /* Accent-tinted borders & headers */
+    #sideBody .section{ border-color: rgba(255,255,255,.08); }
+    #sideBody .section{ box-shadow: 0 0 0 1px rgba(0,0,0,0); } /* no visual change; keeps override safe */
+
+    #sideBody .section:nth-of-type(1),
+    #sideBody .section:nth-of-type(2),
+    #sideBody .section:nth-of-type(3),
+    #sideBody .section:nth-of-type(4),
+    #sideBody .section:nth-of-type(5),
+    #sideBody .section:nth-of-type(6){
+      border-color: rgba(255,255,255,.08); /* base */
+      /* colored edge */
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0), 0 0 0 1px rgba(0,0,0,0);
+    }
+
+    #sideBody .section:nth-of-type(1){ border-color: rgba(139,184,176,.38); }
+    #sideBody .section:nth-of-type(2){ border-color: rgba(167,161,197,.38); }
+    #sideBody .section:nth-of-type(3){ border-color: rgba(194,176,144,.38); }
+    #sideBody .section:nth-of-type(4){ border-color: rgba(157,179,143,.38); }
+    #sideBody .section:nth-of-type(5){ border-color: rgba(147,169,200,.38); }
+    #sideBody .section:nth-of-type(6){ border-color: rgba(200,154,162,.38); }
+
+    #sideBody .section:nth-of-type(1) > .secHead{ background: rgba(139,184,176,.10); border-bottom-color: rgba(139,184,176,.28); }
+    #sideBody .section:nth-of-type(2) > .secHead{ background: rgba(167,161,197,.10); border-bottom-color: rgba(167,161,197,.28); }
+    #sideBody .section:nth-of-type(3) > .secHead{ background: rgba(194,176,144,.10); border-bottom-color: rgba(194,176,144,.28); }
+    #sideBody .section:nth-of-type(4) > .secHead{ background: rgba(157,179,143,.10); border-bottom-color: rgba(157,179,143,.28); }
+    #sideBody .section:nth-of-type(5) > .secHead{ background: rgba(147,169,200,.10); border-bottom-color: rgba(147,169,200,.28); }
+    #sideBody .section:nth-of-type(6) > .secHead{ background: rgba(200,154,162,.10); border-bottom-color: rgba(200,154,162,.28); }
+
+    /* Controls inside each section */
+    #sideBody .section:nth-of-type(1) button,
+    #sideBody .section:nth-of-type(2) button,
+    #sideBody .section:nth-of-type(3) button,
+    #sideBody .section:nth-of-type(4) button,
+    #sideBody .section:nth-of-type(5) button,
+    #sideBody .section:nth-of-type(6) button{
+      border-color: rgba(255,255,255,.14);
+    }
+    #sideBody .section:nth-of-type(1) button{ border-color: rgba(139,184,176,.30); }
+    #sideBody .section:nth-of-type(2) button{ border-color: rgba(167,161,197,.30); }
+    #sideBody .section:nth-of-type(3) button{ border-color: rgba(194,176,144,.30); }
+    #sideBody .section:nth-of-type(4) button{ border-color: rgba(157,179,143,.30); }
+    #sideBody .section:nth-of-type(5) button{ border-color: rgba(147,169,200,.30); }
+    #sideBody .section:nth-of-type(6) button{ border-color: rgba(200,154,162,.30); }
+
+    #sideBody .section:nth-of-type(1) select,
+    #sideBody .section:nth-of-type(1) input[type="number"],
+    #sideBody .section:nth-of-type(1) input[type="text"],
+    #sideBody .section:nth-of-type(2) select,
+    #sideBody .section:nth-of-type(2) input[type="number"],
+    #sideBody .section:nth-of-type(2) input[type="text"],
+    #sideBody .section:nth-of-type(3) select,
+    #sideBody .section:nth-of-type(3) input[type="number"],
+    #sideBody .section:nth-of-type(3) input[type="text"],
+    #sideBody .section:nth-of-type(4) select,
+    #sideBody .section:nth-of-type(4) input[type="number"],
+    #sideBody .section:nth-of-type(4) input[type="text"],
+    #sideBody .section:nth-of-type(5) select,
+    #sideBody .section:nth-of-type(5) input[type="number"],
+    #sideBody .section:nth-of-type(5) input[type="text"],
+    #sideBody .section:nth-of-type(6) select,
+    #sideBody .section:nth-of-type(6) input[type="number"],
+    #sideBody .section:nth-of-type(6) input[type="text"]{
+      border-color: rgba(255,255,255,.14);
+    }
+
+    #sideBody .section:nth-of-type(1) select,
+    #sideBody .section:nth-of-type(1) input[type="number"],
+    #sideBody .section:nth-of-type(1) input[type="text"]{ border-color: rgba(139,184,176,.26); }
+    #sideBody .section:nth-of-type(2) select,
+    #sideBody .section:nth-of-type(2) input[type="number"],
+    #sideBody .section:nth-of-type(2) input[type="text"]{ border-color: rgba(167,161,197,.26); }
+    #sideBody .section:nth-of-type(3) select,
+    #sideBody .section:nth-of-type(3) input[type="number"],
+    #sideBody .section:nth-of-type(3) input[type="text"]{ border-color: rgba(194,176,144,.26); }
+    #sideBody .section:nth-of-type(4) select,
+    #sideBody .section:nth-of-type(4) input[type="number"],
+    #sideBody .section:nth-of-type(4) input[type="text"]{ border-color: rgba(157,179,143,.26); }
+    #sideBody .section:nth-of-type(5) select,
+    #sideBody .section:nth-of-type(5) input[type="number"],
+    #sideBody .section:nth-of-type(5) input[type="text"]{ border-color: rgba(147,169,200,.26); }
+    #sideBody .section:nth-of-type(6) select,
+    #sideBody .section:nth-of-type(6) input[type="number"],
+    #sideBody .section:nth-of-type(6) input[type="text"]{ border-color: rgba(200,154,162,.26); }
+
+    #sideBody .section:nth-of-type(1) .pill{ border-color: rgba(139,184,176,.26); }
+    #sideBody .section:nth-of-type(2) .pill{ border-color: rgba(167,161,197,.26); }
+    #sideBody .section:nth-of-type(3) .pill{ border-color: rgba(194,176,144,.26); }
+    #sideBody .section:nth-of-type(4) .pill{ border-color: rgba(157,179,143,.26); }
+    #sideBody .section:nth-of-type(5) .pill{ border-color: rgba(147,169,200,.26); }
+    #sideBody .section:nth-of-type(6) .pill{ border-color: rgba(200,154,162,.26); }
+
+    #sideBody .section:nth-of-type(1) .axisRow .mid{ border-color: rgba(139,184,176,.22); }
+    #sideBody .section:nth-of-type(2) .axisRow .mid{ border-color: rgba(167,161,197,.22); }
+    #sideBody .section:nth-of-type(3) .axisRow .mid{ border-color: rgba(194,176,144,.22); }
+    #sideBody .section:nth-of-type(4) .axisRow .mid{ border-color: rgba(157,179,143,.22); }
+    #sideBody .section:nth-of-type(5) .axisRow .mid{ border-color: rgba(147,169,200,.22); }
+    #sideBody .section:nth-of-type(6) .axisRow .mid{ border-color: rgba(200,154,162,.22); }
+
+
+    /* ---------------------------------------------
+       Visibility fixes:
+       ① Remove "Viewer" giant frame feel (no gradient panel background / no left border)
+       ② Make responsibility headers (section titles) clearly larger than sub-items
+       (CSS-only; no JS changes)
+       --------------------------------------------- */
+
+    /* ① Sidebar should NOT look like one big boxed panel */
+    #sidebar{
+      background: transparent !important;   /* kill gradient */
+      border-left: 0 !important;           /* kill left border */
+      box-shadow: none !important;
+    }
+    #sideHeader{
+      background: transparent !important;
+      border-bottom: 0 !important;
+    }
+    #sideBody{
+      background: transparent !important;
+    }
+
+    /* make each responsibility area read as its own box */
+    #sideBody .section{
+      margin: 12px 12px 14px !important;
+      border: 1px solid rgba(255,255,255,.14) !important;
+      background: rgba(0,0,0,.10) !important;
+    }
+    #sideBody .section:last-child{ margin-bottom: 18px !important; }
+
+    /* ② Responsibility header typography */
+    #sideBody .section > .secHead{
+      font-size: 16px !important;
+      font-weight: 800 !important;
+      letter-spacing: .2px;
+      padding: 12px 10px !important;
+    }
+    #sideBody .section > .secHead > span:first-child{
+      font-size: 16px !important;
+      font-weight: 800 !important;
+    }
+      /* Sidebar resize handle */
+    #resizeHandle{
+      position:fixed;
+      top:0;
+      bottom:0;
+      right: var(--sideW);
+      width: 10px;
+      cursor: ew-resize;
+      z-index: 25; /* above app(0) and below overlays(50) */
+      transform: translateX(5px); /* center on the boundary */
+      touch-action: none;
+    }
+    #resizeHandle::before{
+      content:"";
+      position:absolute;
+      top:0; bottom:0; left:4px;
+      width:2px;
+      background: rgba(255,255,255,.08);
+    }
+    body.isFullscreen #resizeHandle{ display:none !important; }
+  </style>
+
+  </head>
+
+<body>
+  <div id="app"></div>
+
+  <div id="dropHint">
+    Drop files here<br>
+    <span style="font-size:12px;font-weight:500;opacity:.9">
+      GLB/GLTF, OBJ(+MTL+textures), FBX, PLY, STL
+    </span>
+  <div id="fsOverlay">
+    <button id="btnFsExit" class="iconBtn" title="Exit fullscreen">⤢</button>
+  </div>
+
+  </div>
+
+  <div id="resizeHandle" title="Drag to resize"></div>
+
+  <aside id="sidebar">
+    <div id="sideHeader">
+      <div class="title">Viewer</div>
+      <div class="headRight">
+        <div id="status">booting...</div>
+        <button id="btnFullscreen" class="iconBtn" title="Fullscreen">⛶</button>
+      </div>
+    </div>
+
+    <div id="sideBody">
+      <div class="section">
+        <div class="secHead"><span>Import</span></div>
+        <div class="secBody">
+          <div class="row">
+            <button id="btnPick">Pick files...</button>
+            <button id="btnReset" disabled>Reset View</button>
+            <button id="btnClear" disabled>Clear</button>
+          </div>
+          <div class="hint">
+            ・単一ファイル：.glb/.fbx/.ply/.stl など<br>
+            ・複数ファイルセット：OBJ + MTL + テクスチャ一式（同時に選択/ドロップ）<br>
+            ・GLTF(.gltf) は .bin やテクスチャも一緒に入れると確実
+          </div>
+          <div class="fileList" id="fileList">(no files)</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="secHead"><span>Basic</span></div>
+        <div class="secBody">
+          <div class="field">
+            <label>Renderer</label>
+            <select id="selRenderer">
+              <option value="pbr">PBR</option>
+              <option value="matcap">Matcap</option>
+            </select>
+          </div>
+
+          <div class="row" id="rowMatcap" style="display:none">
+            <button id="btnMatcapPick" disabled>Matcap file...</button>
+            <button id="btnMatcapDefault" disabled title="Default matcap">Default</button>
+            <span class="hint" id="matcapName">(default)</span>
+          </div>
+
+          <div class="field">
+            <label>Shading</label>
+            <select id="selShading">
+              <option value="lit">Lit</option>
+              <option value="unlit">Shadeless (Unlit)</option>
+            </select>
+          </div>
+
+          <div class="hint" id="shadingNote"></div>
+
+          <div class="row" style="margin-top:4px">
+            <label class="pill">
+              <input type="checkbox" id="chkAdvRot" />
+              Show advanced rotation
+            </label>
+            <button id="btnRotReset" disabled title="Rotation reset">⟲</button>
+          </div>
+
+          <div class="hint">Straighten model (+/-90 deg / Pivot=geometry center)</div>
+          <div class="axisGroup">
+            <div class="axisRow">
+              <button class="axisBtn" id="btnRotXm" disabled>◀</button>
+              <div class="mid">X</div>
+              <button class="axisBtn" id="btnRotXp" disabled>▶</button>
+            </div>
+            <div class="axisRow">
+              <button class="axisBtn" id="btnRotYm" disabled>◀</button>
+              <div class="mid">Y</div>
+              <button class="axisBtn" id="btnRotYp" disabled>▶</button>
+            </div>
+            <div class="axisRow">
+              <button class="axisBtn" id="btnRotZm" disabled>◀</button>
+              <div class="mid">Z</div>
+              <button class="axisBtn" id="btnRotZp" disabled>▶</button>
+            </div>
+          </div>
+
+          <div class="hint">
+            ・ドラッグ中はOrbit操作停止<br>
+            ・Matcap選択中はShadingはMatcap優先（固定扱い）
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="secHead"><span>Camera</span></div>
+        <div class="secBody">
+          <div class="field">
+            <label>FOV</label>
+            <input id="camFov" type="number" step="1" value="45"
+              style="width:100%;background:#0f0f0f;border:1px solid var(--line);color:var(--fg);padding:8px 10px;border-radius:10px;font-size:12px;outline:none" />
+          </div>
+          <div class="hint">FOV=0 で Orthographic（オルソ）</div>
+        
+          <div class="row" style="flex-wrap:wrap; gap:6px">
+            <button id="btnViewFront">正面</button>
+            <button id="btnViewBack">背面</button>
+            <button id="btnViewRight">右側面</button>
+            <button id="btnViewLeft">左側面</button>
+            <button id="btnViewTop">上面</button>
+            <button id="btnViewBottom">下面</button>
+          </div>
+          <div class="row" style="margin-top:2px">
+            <button id="btnOrthoExit" disabled>オルソ表示を解除</button>
+          </div>
+          <div class="hint" id="orthoNavHint" style="display:none">
+            オルソ表示中：ホイールズーム以外の操作は無効
+          </div>
+</div>
+      </div>
+
+      <div class="section" id="secLighting">
+        <div class="secHead"><span>Lighting</span></div>
+        <div class="secBody"></div>
+      </div>
+
+      <div class="section" id="secEnvironment">
+        <div class="secHead"><span>Environment / Background</span></div>
+        <div class="secBody"></div>
+      </div>
+
+      <div class="section" id="secPostProcess">
+        <div class="secHead"><span>PostProcess</span></div>
+        <div class="secBody"></div>
+      </div>
+    </div>
+  </aside>
+
+  <input id="fileInput" type="file" multiple
+    accept=".glb,.gltf,.bin,.obj,.mtl,.fbx,.ply,.stl,.png,.jpg,.jpeg,.webp,.bmp,.tga,.gif,.ktx2,.dds" />
+  <input id="matcapInput" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" />
+
+  
+<script>
+// Disable autocomplete/autofill on number inputs (serverless build shim)
+(function installNumberInputAutocompleteGuard(){
+  const apply = (root=document)=>{
+    const list = root.querySelectorAll ? root.querySelectorAll('input[type="number"]') : [];
+    for (const el of list){
+      el.setAttribute('autocomplete', 'off');
+      el.setAttribute('autocorrect', 'off');
+      el.setAttribute('autocapitalize', 'off');
+      el.setAttribute('spellcheck', 'false');
+      el.setAttribute('inputmode', 'decimal');
+      if (!el.hasAttribute('name')){
+        const id = el.id || ('num_' + Math.random().toString(36).slice(2));
+        el.setAttribute('name', id + '_nohistory');
+      }
+    }
+  };
+
+  apply(document);
+
+  const mo = new MutationObserver((mutations)=>{
+    for (const m of mutations){
+      for (const n of m.addedNodes){
+        if (!(n instanceof Element)) continue;
+        if (n.matches && n.matches('input[type="number"]')){
+          apply(n.parentNode || document);
+        } else if (n.querySelectorAll){
+          apply(n);
+        }
+      }
+    }
+  });
+  mo.observe(document.documentElement, { childList:true, subtree:true });
+})();
+</script>
+<script src="./bundle.js"></script>
+</body>
+</html>
